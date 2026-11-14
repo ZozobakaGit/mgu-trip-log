@@ -1,17 +1,41 @@
 {
-  "id": "zozo_triplog", "title": "Поездки", "description": "Журнал поездок и диагностика круиза для iDrive 7",
-  "version": "0.1.0", "vendor": "ZozobakaGit", "loggingId": "OZT1",
-  "mguHmi": ["ID7"], "mguAppStartType": "autostart",
-  "signals": {
-    "de.bmw.infotainment.vehicle.Vehicle2": {"statusCarSpeed2": "rs"},
-    "de.bmw.infotainment.vehicle.CDS": {"statusEngineSpeed2": "rs", "statusEngineStatus": "rs"},
-    "de.bmw.infotainment.vehicle.CDS2": {"statusPushButtonMSA2": "rs"},
-    "de.bmw.infrastructure.VehicleInformation": {"statusGearboxDrive": "s", "DataPowerTrain2": "s"},
-    "de.bmw.infotainment.drivingexcitement.FES": {"statusFESVehicleDynamicSwitchHMI": "rs"},
-    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
-      "_instances": "SystemFunctionsInternalTasuInst1", "_methods": ["sendTasuRequest"], "_broadcasts": ["sendTasuResponse"]
+  "id": "zozo_triplog",
+  "title": "Поездки",
+  "description": "Ручная проверка интерфейса и сигналов круиза на iDrive 7",
+  "version": "0.2.0",
+  "vendor": "ZozobakaGit",
+  "loggingId": "OZT1",
+  "mguHmi": [
+    "ID7"
+  ],
+  "mguAppStartType": "manually",
+  "signals": {},
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Поездки",
+      "buttons": [
+        [
+          "BTN_NEXT",
+          "Экран"
+        ],
+        [
+          "BTN_ACTION",
+          "Проверить"
+        ],
+        [
+          "BTN_MORE",
+          "Далее"
+        ],
+        [
+          "BTN_EXPORT",
+          "QR отчёта"
+        ]
+      ]
     }
-  },
-  "screens": [{"name": "MAIN", "kind": "canvas", "title": "Поездки", "buttons": [["BTN_NEXT","Вкладка"],["BTN_ACTION","Выбрать"],["BTN_MORE","Далее"]]}],
-  "settings": []
+  ],
+  "settings": [],
+  "cruiseProbe": true,
+  "remoteLogs": false
 }

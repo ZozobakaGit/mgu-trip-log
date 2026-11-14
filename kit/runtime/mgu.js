@@ -80,7 +80,7 @@ const stage = (s) => { startStage = s; };
 // encrypted crash logs (remotelog.js): the session marker now, the timers once running; a bundle only after
 // a crash or when asked, uploaded only with a drop installed on the unit
 try {
-    if (process.env.NG_REMOTELOG !== '0') {
+    if (SPEC.remoteLogs !== false && process.env.NG_REMOTELOG !== '0') {
         const rl = require('./remotelog.js');
         remote = rl.set(rl.create({ id: SPEC.id, version: SPEC.version, dataDir: DATA_DIR, logFile: LOG_FILE, log: (l, m) => fileLog(l.toUpperCase(), m) }));
         remote.begin();

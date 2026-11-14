@@ -25,7 +25,7 @@ An app's folder (apps/<id>/) and where its files go in the package (source/javas
     data/<folder>/          a data folder: packed into <folder>.pack (pack_data.py), read with
                             kit/runtime/pack.js; a committed data/<folder>.pack is copied as it is
 """
-import json, os, re, shutil, sys, tarfile, uuid
+import json, os, re, shutil, subprocess, sys, tarfile, uuid
 from xml.sax.saxutils import escape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pack_data  # noqa: E402
@@ -574,6 +574,13 @@ def build(app_id, language='en'):
     os.makedirs(os.path.join(src, 'config'))
     os.makedirs(os.path.join(src, 'node_modules', 'oap-sdk'))
 
+    if spec.get('cruiseProbe') and os.path.isfile(UNIT_CATALOG):
+        probe = os.path.join(APPS, app_id, 'cruise-probe.js')
+        try:
+            result = subprocess.check_output(['node', probe, UNIT_CATALOG], timeout=5)
+            spec['signals'].update(json.loads(result))
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print('  cruise probe unavailable: %s' % exc)
     manifest = manifest_for(json.loads(json.dumps(spec)))
     missing = fit_to_unit(manifest, spec)
     for what, loses in missing.items():
@@ -637,8 +644,10 @@ def build(app_id, language='en'):
             body = file.read()
         with open(entry, 'wb') as file:
             file.write(credit.encode('utf-8') + body)
-    rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'retiredSettings', 'config', 'startWidget')}
+    rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'retiredSettings', 'config', 'startWidget', 'remoteLogs')}
     rt_spec['stateIds'] = state_ids
+    if spec.get('cruiseProbe'):
+        rt_spec['probeProxies'] = {i: manifest['proxies'][i] for i in spec['signals'] if i in manifest['proxies']}
     if spec.get('startWidget'):
         # the template this build's widget uses (the app draws there only through the stream with "stream": true)
         layout, stream = start_widget_layout(spec['startWidget'])

@@ -59,8 +59,10 @@ async function watch(iface, instance, handlers, log, opts) {
         res.proxy = p;
         res.shutdown = () => Promise.resolve().then(() => p.shutdown && p.shutdown()).catch(() => {});
         const fields = Object.keys(handlers || {});
+        const access = opts && opts.fieldAccess;
+        const allows = (f, mode) => !access || String(access[f] || '').indexOf(mode) >= 0;
         const fetchAll = () => fields.forEach((f) => {
-            if (cfg.fields && cfg.fields[f] && cfg.fields[f].getter) {
+            if (allows(f, 'r') && cfg.fields && cfg.fields[f] && cfg.fields[f].getter) {
                 p.getValue(f, 3000).then((v) => handlers[f](v)).catch(() => {});
             }
         });
@@ -68,6 +70,7 @@ async function watch(iface, instance, handlers, log, opts) {
             try { return p.subscribeToAvailability((a) => { res.available = !!a; if (a) setImmediate(fetchAll); }); } catch (e) { return null; /* older binding */ }
         });
         for (const f of fields) {
+            if (!allows(f, 's')) continue;
             try {
                 await nativeTick(() => p.subscribe({ name: f, onReceive: (v) => { try { handlers[f](v); } catch (e) { if (log) log.warn(iface + '.' + f + ': ' + e); } } }));
             } catch (e) {
