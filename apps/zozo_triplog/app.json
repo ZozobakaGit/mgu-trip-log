@@ -2,7 +2,7 @@
   "id": "zozo_triplog",
   "title": "Поездки",
   "description": "Ручная проверка интерфейса и сигналов круиза на iDrive 7",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "vendor": "ZozobakaGit",
   "loggingId": "OZT1",
   "mguHmi": [
@@ -37,5 +37,6 @@
   ],
   "settings": [],
   "cruiseProbe": true,
-  "remoteLogs": false
+  "remoteLogs": false,
+  "lightPreview": true
 }

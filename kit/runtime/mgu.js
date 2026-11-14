@@ -166,6 +166,7 @@ class Ui {
         this._visHandlers = [];
         this._focus = Object.create(null);    // stateName -> false while a popup covers it
         this._focusHandlers = [];
+        this._pendingClicks = [];
         this.timing = { png: 0, push: 0 };    // ms spent encoding / handing images to the HMI
         this._cnText = new HmiText();
     }
@@ -212,6 +213,7 @@ class Ui {
     onClick(name, fn) {
         const c = this.comp(name);
         if (c) c.on('action', (ev) => { log.info('click ' + name); Promise.resolve().then(() => fn(ev || {})).catch((e) => log.error('click ' + name, e)); });
+        else if (!this.rhmi) this._pendingClicks.push([name, fn]);
     }
     open(stateName) { return this.rhmi ? this._try('open ' + stateName, this.rhmi.openState(stateName)) : Promise.resolve(); }
     close(stateName) { return this.rhmi ? this._try('close ' + stateName, this.rhmi.closeState(stateName)) : Promise.resolve(); }
@@ -632,7 +634,7 @@ async function runInner(impl) {
     ui.display = display;
     const ctx = {
         app, ui, settings, log, spec: SPEC, dataDir: DATA_DIR, display, widget, remoteLog: remote,
-        signals: require('./signals'),
+        get signals() { return require('./signals'); },
         theme: () => themeFn(),
         /**
          * setTheme(fn): fn() returns the theme (themes.js keys) the kit draws its own parts in, in place of the
@@ -762,7 +764,11 @@ async function runInner(impl) {
         if (ui.rhmi) return fn(ui.rhmi);
         const t = setInterval(() => { if (ui.rhmi) { clearInterval(t); log.info('HMI application arrived'); fn(ui.rhmi); } }, 500);
     };
-    whenRhmi((r) => { wireTracked(); if (r.on) r.on('applicationStackChanged', onStack); });
+    whenRhmi((r) => {
+        wireTracked();
+        if (r.on) r.on('applicationStackChanged', onStack);
+        ui._pendingClicks.splice(0).forEach(([name, fn]) => ui.onClick(name, fn));
+    });
 
     // entry points (tiles): map them to the main screen once, up front, like
     // BMW's own apps do; a tap then only opens the mapped state
@@ -772,30 +778,55 @@ async function runInner(impl) {
         const appDesc = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'rhmiData', 'application.json'), 'utf8'));
         entryUuids = ((appDesc.application && appDesc.application.entryPoints) || []).map((e) => e.uuid);
     } catch (e) { log.warn('no rhmiData/application.json: ' + e); }
-    const mainState = ui.comp(mainName);
-    const mapped = {};
-    stage('entry points');
-    await Promise.all(entryUuids.filter(() => !!(ui.rhmi && mainState)).map((uuid) => ui.rhmi.mapEntryState(uuid, mainState)
-        .then(() => { mapped[uuid] = true; log.info('mapped entry ' + uuid + ' -> ' + mainName); })
-        .catch((e) => log.error('map entry state', e))));
-    let opening = null;
+    const mapped = new Set();
+    function waitForEntryStep(promise, label) {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(label + ': HMI timeout')), 1800);
+        });
+        return Promise.race([promise, timeout]).then((value) => {
+            clearTimeout(timer);
+            return value;
+        }, (err) => {
+            clearTimeout(timer);
+            throw err;
+        });
+    }
+    let opening = null, pendingEntry = null, initialized = false;
     const openEntry = (uuid) => {
-        if (opening) return opening;   // MainApp can send the same tap twice
-        if (!ui.rhmi) { log.warn('entry point: no HMI application yet'); return Promise.resolve(); }
-        const map = mapped[uuid] ? Promise.resolve() : ui.rhmi.mapEntryState(uuid, mainState).then(() => { mapped[uuid] = true; });
-        opening = map
-            .then(() => (mainState && mainState.updateResources ? mainState.updateResources().catch(() => {}) : null))
-            .then(() => ui.rhmi.openEntryState(uuid))
-            .then(() => ui._setVisible(mainName, true))
-            .catch((e) => log.error('open entry state', e))
-            .then(() => { opening = null; });
+        if (opening) return opening;
+        opening = (async () => {
+            for (let attempt = 0; attempt < 4; attempt++) {
+                try {
+                    const rhmi = ui.rhmi, mainState = rhmi && rhmi.getByName(mainName);
+                    if (!mainState) throw new Error('HMI state not ready');
+                    if (!mapped.has(uuid)) {
+                        await waitForEntryStep(rhmi.mapEntryState(uuid, mainState), 'map entry');
+                        mapped.add(uuid);
+                    }
+                    if (!SPEC.lightPreview && mainState.updateResources) {
+                        try { await waitForEntryStep(mainState.updateResources(), 'entry resources'); }
+                        catch (e) { log.warn(e.message); }
+                    }
+                    await waitForEntryStep(rhmi.openEntryState(uuid), 'open entry');
+                    ui._setVisible(mainName, true);
+                    log.info('entry visible: ' + mainName);
+                    return;
+                } catch (e) {
+                    mapped.delete(uuid);
+                    log.warn('open entry attempt ' + (attempt + 1) + ': ' + e.message);
+                    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 800));
+                }
+            }
+        })().then(() => { opening = null; });
         return opening;
     };
     // a tap on the home-screen widget opens the app
     widget.onTap(() => { if (entryUuids[0]) openEntry(entryUuids[0]); });
     app.on('entryPointExecute', (uuid, reason, name) => {
         log.info('entry point ' + name + ' (' + reason + ')');
-        openEntry(uuid);
+        if (initialized) openEntry(uuid);
+        else pendingEntry = uuid;
     });
 
     // never let a UI call that the HMI does not answer block the app start:
@@ -822,12 +853,14 @@ async function runInner(impl) {
     if (impl && impl.start) await step('app start', Promise.resolve().then(() => impl.start(ctx)), 5000);
     stage('initialized');
     await app.initialized();
+    initialized = true;
     stage('running');
     log.info('initialized (start reason ' + app.startReason + ')');
     // launched by a tile tap / bookmark: the execute event came before we
     // listened, so open the screen ourselves (M Laptimer does the same)
     const lastEntry = app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid();
-    if (lastEntry && ['ENTRY_POINT', 'BOOKMARK', 'LUM'].indexOf(String(app.startReason)) >= 0) openEntry(lastEntry);
+    if (pendingEntry) openEntry(pendingEntry);
+    else if (lastEntry && ['ENTRY_POINT', 'BOOKMARK', 'LUM'].indexOf(String(app.startReason)) >= 0) openEntry(lastEntry);
     process.on('unhandledRejection', (e) => log.error('unhandled', e));
     return ctx;
 }

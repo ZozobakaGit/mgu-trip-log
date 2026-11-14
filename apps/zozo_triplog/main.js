@@ -1,17 +1,19 @@
 'use strict';
 const mgu = require('./kit/mgu');
 const { frame } = require('./kit/gauges');
+const { Recorder, play } = require('./kit/record');
+const { Canvas } = require('./kit/canvas');
 const { draw, tabs } = require('./screen');
 const { summary } = require('./journal');
 
 const DEMO_START = Date.UTC(2026, 0, 1, 8, 42);
-const DEMO_ROWS = Array.from({ length: 181 }, (_, i) => {
-    const mode = i < 36 ? 'eco' : i < 155 ? 'comfort' : 'sport';
-    const cruise = i >= 45 && i < 122;
-    return { type: 'sample', at: DEMO_START + i * 1000, mode, interval_mode: mode,
+const DEMO_ROWS = Array.from({ length: 61 }, (_, i) => {
+    const mode = i < 12 ? 'eco' : i < 52 ? 'comfort' : 'sport';
+    const cruise = i >= 15 && i < 41;
+    return { type: 'sample', at: DEMO_START + i * 3000, mode, interval_mode: mode,
         speed: 67, lph: 6.1 + 1.4 * Math.sin(i / 9) + 0.8 * Math.cos(i / 3),
-        dt: i ? 1000 : 0, km: 67 / 3600, liters: 6.1 / 3600, cruise, interval_cruise: cruise,
-        setKmh: cruise ? i < 85 ? 80 : 100 : null, stopped_ms: i > 167 ? 1000 : 0, stopped_known_ms: 1000 };
+        dt: i ? 3000 : 0, km: 67 / 1200, liters: 6.1 / 1200, cruise, interval_cruise: cruise,
+        setKmh: cruise ? i < 28 ? 80 : 100 : null, stopped_ms: i > 55 ? 3000 : 0, stopped_known_ms: 3000 };
 });
 const demo = { rows: DEMO_ROWS, summary: summary(DEMO_ROWS) };
 const journal = { history: [demo], resets: [0,0,0], entries: () => [demo], rows: () => DEMO_ROWS, counter: () => demo.summary };
@@ -20,10 +22,17 @@ mgu.run({
     start(ctx) {
         const { ui, log } = ctx;
         const state = { tab: 0, offset: 0, selected: null, option: 0, days: 7, transfer: null, message: '' };
-        let probe = null, lastReport = null, page = 0, scanResult = null, dirty = true, drawing = false;
+        let probe = null, lastReport = null, page = 0, scanResult = null;
+        let dirty = true, drawing = false, redraw = null, firstFrame = true;
+        const recorder = new Recorder(1600, 520);
+        const canvas = new Canvas(800, 260);
         const specs = ctx.spec.probeProxies || {};
         const text = (cv, label, x, y, size, color) => cv.text(label, x, y, size, color || '#f5f6fa', { literal: true });
-        const refresh = () => { dirty = true; };
+        function refresh() {
+            dirty = true;
+            if (redraw || drawing || !ui.isVisible('MAIN')) return;
+            redraw = setTimeout(present, 250);
+        }
         const stopTransfer = () => { if (state.transfer) state.transfer.close(); state.transfer = null; };
         const stopProbe = () => {
             if (!probe) return;
@@ -119,7 +128,10 @@ mgu.run({
         ctx.onTab(select);
         ui.onVisible((name, shown) => {
             if (name !== 'MAIN') return;
-            if (!shown) { stopProbe(); stopTransfer(); }
+            if (!shown) {
+                clearTimeout(redraw); redraw = null;
+                stopProbe(); stopTransfer();
+            }
             refresh();
         });
         ctx.onLayout(refresh);
@@ -183,19 +195,33 @@ mgu.run({
             if (probe) text(cv, 'Чтение до 2 минут', 1070, 471, 25, '#67d5ee');
         }
 
-        ctx.loop('MAIN', 2, async () => {
-            if (!dirty || drawing) return;
-            drawing = true; dirty = false;
+        async function present() {
+            redraw = null;
+            if (!dirty || !ui.isVisible('MAIN')) return;
+            drawing = true;
+            dirty = false;
             try {
-                const cv = ctx.canvas(1600, 520).clear('#090b10');
+                recorder.reset();
+                const cv = recorder.clear('#090b10');
                 frame(cv, ctx.theme(), tabs, state.tab);
                 if (state.tab === 6) diagnostic(cv);
                 else {
                     draw(cv, journal, state, actions);
                     text(cv, 'ДЕМО', 1460, 40, 27, '#f4bd6a');
                 }
-                await ui.image('MAIN_GFX', cv);
-            } finally { drawing = false; }
-        });
+                play(cv.words(), canvas, 0.5);
+                if (firstFrame) {
+                    firstFrame = false;
+                    log.info('first frame drawn');
+                }
+                await ui.image('MAIN_GFX', canvas.png());
+            } catch (e) {
+                log.error('preview frame', e);
+            } finally {
+                drawing = false;
+                if (dirty) refresh();
+            }
+        }
+        refresh();
     }
 });

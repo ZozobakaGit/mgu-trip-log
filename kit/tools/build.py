@@ -617,6 +617,8 @@ def build(app_id, language='en'):
     adir = os.path.join(APPS, app_id)
     fetch_assets(adir, spec.get('assets', []))
     for name, path in sorted(app_files(app_id, adir, spec.get('share', [])).items()):
+        if spec.get('lightPreview') and name in ('fuel.js', 'diagnostics.js'):
+            continue
         out = os.path.join(src, 'javascript', name)
         if os.path.isdir(path):
             raw, size, _ = pack_data.pack(path, out)
@@ -629,6 +631,18 @@ def build(app_id, language='en'):
     kr = os.path.join(KIT, 'runtime')
     for f in os.listdir(kr):
         p = os.path.join(kr, f)
+        if spec.get('lightPreview'):
+            used = {'canvas.js', 'credits.js', 'display.js', 'fonts.js', 'gauges.js',
+                    'hmi-text.js', 'i18n.js', 'mgu.js', 'record.js', 'renderd.js',
+                    'sheet.js', 'signals.js', 'themes.js', 'fonts'}
+            if f not in used:
+                continue
+            if f == 'fonts':
+                target = os.path.join(src, 'javascript', 'kit', 'fonts')
+                os.makedirs(target)
+                for font in ('label.json', 'UFL-UbuntuCondensed.txt'):
+                    shutil.copy(os.path.join(p, font), os.path.join(target, font))
+                continue
         if os.path.isdir(p):
             shutil.copytree(p, os.path.join(src, 'javascript', 'kit', f))
         else:
@@ -644,7 +658,7 @@ def build(app_id, language='en'):
             body = file.read()
         with open(entry, 'wb') as file:
             file.write(credit.encode('utf-8') + body)
-    rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'retiredSettings', 'config', 'startWidget', 'remoteLogs')}
+    rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'retiredSettings', 'config', 'startWidget', 'remoteLogs', 'lightPreview')}
     rt_spec['stateIds'] = state_ids
     if spec.get('cruiseProbe'):
         rt_spec['probeProxies'] = {i: manifest['proxies'][i] for i in spec['signals'] if i in manifest['proxies']}

@@ -4,13 +4,30 @@
     "path": "apps/*",
     "manifest": "app.json",
     "icon": "icon.png",
-    "exclude": ["_template", "wip"],
-    "mguHmi": ["ID7"],
+    "exclude": [
+      "_template",
+      "wip"
+    ],
+    "mguHmi": [
+      "ID7"
+    ],
     "build": {
       "python": "kit/tools/build.py",
-      "args": ["{id}"],
+      "args": [
+        "{id}"
+      ],
       "sdk": "oap-sdk",
-      "output": "dist/{id}@{version}.tgz"
+      "output": "dist/{id}@{version}.tgz",
+      "shared": [
+        "kit/runtime",
+        "kit/platform",
+        "kit/tools/build.py",
+        "kit/tools/pack_data.py",
+        "kit/tools/localize.py",
+        "kit/tools/locale-revisions.json",
+        "kit/tools/oapgen",
+        "oap-sdk"
+      ]
     }
   }
 }

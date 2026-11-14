@@ -147,7 +147,7 @@ class Display {
 
     /** Start / stop the GPU path for the 'renderer' setting; wait for the socket if it isn't there yet. */
     _mode() {
-        const want = (process.env.MGU_RENDERER || this.settings.get('renderer') || 'auto') !== 'software';
+        const want = !this.spec.lightPreview && (process.env.MGU_RENDERER || this.settings.get('renderer') || 'auto') !== 'software';
         if (this.poll) { clearInterval(this.poll); this.poll = null; }
         if (!want) {
             if (this.gpu) { this.gpu.show(false); this.gpu.close(); this.gpu = null; this.place = null; this._lost(); }
